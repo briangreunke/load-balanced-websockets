@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  webapp_1:
+    container_name: websockets-webapp-1
+    build: ./webapp
+    networks: 
+      - websockets
+    environment: 
+      - SERVER_NUM=1
+
+  webapp_2:
+    container_name: websockets-webapp-2
+    build: ./webapp
+    networks: 
+      - websockets
+    environment: 
+      - SERVER_NUM=2
+
+  proxy:
+    container_name: websockets-webapp-proxy
+    build: ./nginx
+    networks: 
+      - websockets
+    ports:
+      - 80:80
+
+  cache:
+    container_name: websockets-webapp-cache
+    image: redis:latest
+    networks:
+      - websockets
+
+networks:
+  websockets:
+    external: true

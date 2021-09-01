@@ -1,0 +1,42 @@
+<html>
+<head>
+    <title>Log</title>
+</head>
+<body>
+    <h1>Add a new log entry:</h1>
+    <form method="post" action="#" id="log_entry_form">
+        <textarea id="log_entry" rows="4" cols="80"></textarea>
+        <br>
+        <input type="submit" value="Submit" />
+    </form>
+    <div id="all_log_entries">
+        {% for l in all_log_entries %}
+          <h3>{{ l.date }}</h3>
+          <p>{{ l.content }}</p>
+          <hr>
+        {% endfor %}
+    </div>
+
+    <script type="text/javascript" src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.socket.io/3.1.3/socket.io.min.js" integrity="sha384-cPwlPLvBTa3sKAgddT6krw0cJat7egBga3DJepJyrLl4Q9/5WLra3rrnMcyTyOnh" crossorigin="anonymous"></script>
+
+    <script type="text/javascript">
+        $(document).ready(function() {
+            var url = "http://" + document.domain + ":" + location.port;
+            var socket = io.connect(url + "/logs");
+
+            $("#log_entry_form").submit(function(event) {
+                socket.emit('log', {'content': $('#log_entry').val()});
+                $('#log_entry').val('');
+                return false;
+            });
+
+            socket.on('log', function(new_log_entry) {
+                $("#all_log_entries").append('<h3>' + new_log_entry.date + '</h3><p>' + new_log_entry.content + '<p><hr>');
+            });
+            
+        });
+    </script>
+</body>
+</html>
+`
