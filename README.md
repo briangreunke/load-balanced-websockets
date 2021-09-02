@@ -1,7 +1,7 @@
 # Load balanced Websockets
 This is a simple example of how to load a web application which uses websockets.
 
-This example uses:
+This example contains:
 - Flask
 - Flask-SocketIO
 - nginx
