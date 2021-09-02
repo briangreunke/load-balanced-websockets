@@ -21,7 +21,7 @@ The two Python clients connect to, and emit messages to, the proxy, which forwar
 
 The proxy also exposes port 80 so you can browse to the application yourself.
 
-The web applications are using [Flask-SocketIO]() which is configured to use a `message_queue` in Redis.
+The web applications are using [Flask-SocketIO](https://github.com/miguelgrinberg/flask-socketio) which is configured to use a `message_queue` in Redis.
 This allows the multi-instance application to work with Websockets.
 
 ## Run
