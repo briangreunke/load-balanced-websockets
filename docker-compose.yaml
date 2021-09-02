@@ -5,32 +5,67 @@ services:
     container_name: websockets-webapp-1
     build: ./webapp
     networks: 
-      - websockets
+      - load-balanced-ws
     environment: 
       - SERVER_NUM=1
+      - REDIS_HOST=cache
+    depends_on:
+      - cache
 
   webapp_2:
     container_name: websockets-webapp-2
     build: ./webapp
     networks: 
-      - websockets
+      - load-balanced-ws
     environment: 
       - SERVER_NUM=2
+      - REDIS_HOST=cache
+    depends_on:
+      - cache
 
   proxy:
     container_name: websockets-webapp-proxy
     build: ./nginx
     networks: 
-      - websockets
+      - load-balanced-ws
     ports:
       - 80:80
+    depends_on:
+      - webapp_1
+      - webapp_2
 
   cache:
     container_name: websockets-webapp-cache
     image: redis:latest
     networks:
-      - websockets
+      - load-balanced-ws
+
+  client_1:
+    container_name: client_1
+    build: ./client
+    networks:
+      load-balanced-ws:
+        ipv4_address: 192.168.0.99  # hashing these addressed forces connection to different servers
+    environment: 
+      - WS_URL=http://proxy
+    depends_on:
+      - proxy
+
+  client_2:
+    container_name: client_2
+    build: ./client
+    networks:
+      load-balanced-ws:
+        ipv4_address: 192.168.0.222
+    environment: 
+      - WS_URL=http://proxy
+    depends_on:
+      - proxy
 
 networks:
-  websockets:
-    external: true
+  load-balanced-ws:
+    external: false
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.0.0/24

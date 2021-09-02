@@ -1,46 +1,107 @@
 from gevent import monkey
 monkey.patch_all()
 
-from datetime import datetime
-import html
-import json
 import os
 
-from flask import Flask, redirect, render_template, request, url_for
-from flask_socketio import SocketIO
+from flask import Flask, jsonify, render_template, request
+from flask_socketio import SocketIO, join_room, leave_room, rooms
 from loguru import logger
 import redis
 
 
-LOG_NAMESPACE = "/logs"
+REDIS_HOSTNAME = os.environ.get("REDIS_HOST")  # Container name from the Docker Compose file
+
+# Hard code some "rooms"
+# * "EVERYONE" is to indicate a broadcast
+EVERYONE = "0"
+TO_OPTIONS = {
+    EVERYONE: "Everyone",
+    "1": "Red",
+    "2": "Blue"
+}
 
 app = Flask(__name__)
-db = redis.StrictRedis('cache', 6379, 0)
-socketio = SocketIO(app, message_queue='redis://cache')
 
+socket_io_kwargs = {}
+db = None
+if REDIS_HOSTNAME:
+    # If Redis is included, we can use it as a message queue
+    # This allows websockets to scale acroos multiple instances of the web application
+    db = redis.StrictRedis(REDIS_HOSTNAME, 6379, 0)
+    connection_string = f"redis://{REDIS_HOSTNAME}"
+    socket_io_kwargs["message_queue"] = connection_string
 
-@app.route('/logs')
-def render_log():
+socketio = SocketIO(app, **socket_io_kwargs)
+logger.info(f"Using a message queue at {connection_string}")
+
+# Flask routes
+@app.route("/headers")
+def show_headers():
+    """View the headers. Specifically the ones modified by the reverse proxy"""
     logger.info(request.headers)
-    all_entries = [l.decode() for l in db.lrange("log_entries", 0, -1)]
-    all_entries = [json.loads(e) for e in all_entries]
-    return render_template('log.html', all_log_entries=all_entries)
+    for h in request.headers:
+        logger.info(f"{h[0]}: {h[1]}")
+    return jsonify({k:v for k, v in request.headers.items()})
 
-@app.route("/clear")
-def clear_db():
-    db.flushdb()
-    logger.info("Flushed cache")
-    return redirect(url_for("render_log"))
-    return render_template('log.html', all_log_entries=[json.loads(l.decode()) for l in db.lrange("log_entries", 0, -1)])
+@app.route("/")
+def render_good_morning():
+    return render_template("good-morning.html")
 
-@socketio.on('log', namespace=LOG_NAMESPACE)
-def add_new_log(new_entry):
-    logger.info(new_entry['content'])
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    entry_str = html.escape(new_entry['content'])
-    entry = json.dumps({"date": now, "content": entry_str})
-    entries = db.rpush("log_entries", entry)
-    socketio.emit('log', {'date': now, 'content': entry_str}, namespace=LOG_NAMESPACE)
+# WS listeners
+@socketio.on("connect")
+def on_connect():
+    """Fires when a client connects"""
+    logger.info(f"{request.sid} Connected")
+    
+@socketio.on("disconnect")
+def on_disconnect():
+    """Fires when a client disconnects"""
+    logger.info(f"{request.sid} Disconnected")
+
+@socketio.on("join")
+def on_join(data):
+    """Fires when a client emits to 'join'
+    
+    The server then 'joins' the client to a room"""
+    logger.info(f"Joining: {data}")
+    to = data["to"]
+    if to in TO_OPTIONS.keys():
+        join_room(to)
+        logger.info(f"Rooms: {rooms()}")
+    else:
+        logger.warning(f"{to} not in TO_OPTIONS")
+
+@socketio.on("leave")
+def on_leave(data):
+    """Fires when a client emits to 'leave'
+    
+    The server then 'removes' the client from the room"""
+    logger.info(f"Leaving: {data}")
+    to = data["to"]
+    if to in TO_OPTIONS.keys():
+        leave_room(to)
+        logger.info(f"Rooms: {rooms()}")
+    else:
+        logger.warning(f"{to} not in TO_OPTIONS")
+
+@socketio.on("say")
+def say_good_morning(greeting):
+    """Fires when a client 'says' Good Morning to a room"""
+    name = greeting.get("name")
+    to = greeting.get("to")
+    # If a 'broadcast' message is received, emit it back out w/ the 'broadcast' flag to True
+    # This will emit to ALL rooms
+    if to == EVERYONE:
+        socketio.emit("broadcast", {"name": name}, broadcast=True)
+    else:
+        # If the room is valid, emit back to everyone who joined the specific room
+        if to in TO_OPTIONS.keys():
+            socketio.emit("gm", {"name": name, "to": TO_OPTIONS[to]}, to=to)
+
+@socketio.on("broadcast")
+def log_broadcast(bcast):
+    """Fires when a broadcast msg is received"""
+    logger.info("Broadcast received: {bcast}")
 
 
 if __name__ == '__main__':
